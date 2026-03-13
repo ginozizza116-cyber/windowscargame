@@ -1,414 +1,78 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Crossy Road Clone</title>
-  <style>
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
+    <meta charset="UTF-8" />
+    <title>Crossy Road</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-    body {
-      background: #111;
-      color: #fff;
-      font-family: system-ui, sans-serif;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: flex-start;
-      height: 100vh;
-      padding-top: 10px;
-    }
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            background: #111;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            color: #fff;
+            overflow: hidden;
+        }
 
-    h1 {
-      margin-bottom: 4px;
-      font-size: 20px;
-    }
+        .wrapper {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
 
-    #info {
-      font-size: 14px;
-      margin-bottom: 8px;
-      text-align: center;
-    }
+        header {
+            padding: 8px 12px;
+            background: #222;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+            z-index: 1;
+        }
 
-    #gameContainer {
-      position: relative;
-      border: 2px solid #444;
-      background: #222;
-    }
+        header .title {
+            font-weight: 600;
+            letter-spacing: 0.03em;
+        }
 
-    canvas {
-      display: block;
-      background: #222;
-    }
+        header .note {
+            font-size: 12px;
+            opacity: 0.8;
+        }
 
-    #overlay {
-      position: absolute;
-      inset: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: rgba(0, 0, 0, 0.6);
-      color: #fff;
-      font-size: 20px;
-      text-align: center;
-      padding: 10px;
-      pointer-events: none;
-    }
+        .game-container {
+            flex: 1;
+            position: relative;
+        }
 
-    #score {
-      margin-top: 6px;
-      font-size: 14px;
-    }
-  </style>
+        iframe {
+            border: none;
+            width: 100%;
+            height: 100%;
+            display: block;
+            background: #000;
+        }
+    </style>
 </head>
+
 <body>
-  <h1>Crossy Road Clone</h1>
-  <div id="info">
-    Use <b>WASD</b> or <b>Arrow keys</b> to move.<br />
-    Reach higher rows to increase your score. Avoid cars, don’t fall in water.
-  </div>
+    <div class="wrapper">
+        <header>
+            <div class="title">Crossy Road</div>
+            <div class="note">If the game doesn’t load, the source host may be blocked.</div>
+        </header>
 
-  <div id="gameContainer">
-    <canvas id="game" width="480" height="640"></canvas>
-    <div id="overlay">Press any key to start</div>
-  </div>
-  <div id="score">Score: <span id="scoreValue">0</span></div>
-
-  <script>
-    const canvas = document.getElementById("game");
-    const ctx = canvas.getContext("2d");
-    const overlay = document.getElementById("overlay");
-    const scoreEl = document.getElementById("scoreValue");
-
-    const TILE = 32;
-    const COLS = Math.floor(canvas.width / TILE);   // 15
-    const ROWS = Math.floor(canvas.height / TILE);  // 20
-
-    // Lane types
-    const LANE_GRASS = "grass";
-    const LANE_ROAD = "road";
-    const LANE_WATER = "water";
-
-    // Player
-    const player = {
-      col: Math.floor(COLS / 2),
-      row: ROWS - 2,
-      width: TILE * 0.8,
-      height: TILE * 0.8,
-      color: "#ffeb3b",
-      onLog: false
-    };
-
-    let lanes = [];
-    let entities = []; // cars + logs
-    let keys = {};
-    let lastTime = 0;
-    let gameRunning = false;
-    let gameOver = false;
-    let maxRowReached = player.row;
-    let score = 0;
-
-    // Lane definition
-    class Lane {
-      constructor(rowIndex, type, speed = 0, direction = 1, density = 0.3) {
-        this.rowIndex = rowIndex;
-        this.type = type;
-        this.speed = speed;
-        this.direction = direction; // 1 = right, -1 = left
-        this.density = density;
-      }
-    }
-
-    // Entity (car or log)
-    class Entity {
-      constructor(x, y, width, height, speed, type) {
-        this.x = x;
-        this.y = y;
-        this.width = width;
-        this.height = height;
-        this.speed = speed;
-        this.type = type; // "car" or "log"
-      }
-
-      update(dt) {
-        this.x += this.speed * dt;
-        if (this.speed > 0 && this.x > canvas.width + this.width) {
-          this.x = -this.width;
-        } else if (this.speed < 0 && this.x < -this.width) {
-          this.x = canvas.width + this.width;
-        }
-      }
-
-      draw(ctx) {
-        if (this.type === "car") {
-          ctx.fillStyle = "#f44336";
-        } else {
-          ctx.fillStyle = "#795548";
-        }
-        ctx.fillRect(this.x, this.y, this.width, this.height);
-      }
-    }
-
-    function initLanes() {
-      lanes = [];
-      entities = [];
-
-      // Bottom safe grass rows
-      for (let r = ROWS - 1; r >= ROWS - 3; r--) {
-        lanes.push(new Lane(r, LANE_GRASS));
-      }
-
-      // Then alternate road and grass, then water and grass
-      let currentRow = ROWS - 4;
-      // A few road lanes
-      for (let i = 0; i < 5 && currentRow >= 0; i++) {
-        const speed = 60 + Math.random() * 60;
-        const dir = Math.random() < 0.5 ? 1 : -1;
-        lanes.push(new Lane(currentRow, LANE_ROAD, speed * dir, dir, 0.35));
-        currentRow--;
-        if (currentRow >= 0) {
-          lanes.push(new Lane(currentRow, LANE_GRASS));
-          currentRow--;
-        }
-      }
-
-      // A few water lanes
-      for (let i = 0; i < 5 && currentRow >= 0; i++) {
-        const speed = 40 + Math.random() * 40;
-        const dir = Math.random() < 0.5 ? 1 : -1;
-        lanes.push(new Lane(currentRow, LANE_WATER, speed * dir, dir, 0.4));
-        currentRow--;
-        if (currentRow >= 0) {
-          lanes.push(new Lane(currentRow, LANE_GRASS));
-          currentRow--;
-        }
-      }
-
-      // If any rows left, fill with grass
-      while (currentRow >= 0) {
-        lanes.push(new Lane(currentRow, LANE_GRASS));
-        currentRow--;
-      }
-
-      // Build entities for road and water lanes
-      for (const lane of lanes) {
-        if (lane.type === LANE_ROAD || lane.type === LANE_WATER) {
-          const y = lane.rowIndex * TILE;
-          const entityWidth = lane.type === LANE_ROAD ? TILE * 1.5 : TILE * 2.2;
-          const entityHeight = TILE * 0.8;
-          const count = Math.floor(COLS * lane.density);
-
-          for (let i = 0; i < count; i++) {
-            const spacing = canvas.width / count;
-            const offset = Math.random() * spacing * 0.5;
-            const x = i * spacing + offset;
-            const type = lane.type === LANE_ROAD ? "car" : "log";
-            entities.push(
-              new Entity(
-                x,
-                y + (TILE - entityHeight) / 2,
-                entityWidth,
-                entityHeight,
-                lane.speed,
-                type
-              )
-            );
-          }
-        }
-      }
-    }
-
-    function resetPlayer() {
-      player.col = Math.floor(COLS / 2);
-      player.row = ROWS - 2;
-      maxRowReached = player.row;
-      score = 0;
-      scoreEl.textContent = score;
-    }
-
-    function startGame() {
-      gameRunning = true;
-      gameOver = false;
-      overlay.style.display = "none";
-      initLanes();
-      resetPlayer();
-      lastTime = performance.now();
-      requestAnimationFrame(loop);
-    }
-
-    function endGame() {
-      gameRunning = false;
-      gameOver = true;
-      overlay.textContent = "Game Over\nPress any key to restart";
-      overlay.style.display = "flex";
-    }
-
-    function handleInput() {
-      if (keys["ArrowUp"] || keys["KeyW"]) movePlayer(0, -1);
-      if (keys["ArrowDown"] || keys["KeyS"]) movePlayer(0, 1);
-      if (keys["ArrowLeft"] || keys["KeyA"]) movePlayer(-1, 0);
-      if (keys["ArrowRight"] || keys["KeyD"]) movePlayer(1, 0);
-    }
-
-    let inputCooldown = 0;
-    const INPUT_DELAY = 120; // ms between moves
-
-    function movePlayer(dx, dy) {
-      const newCol = player.col + dx;
-      const newRow = player.row + dy;
-      if (newCol < 0 || newCol >= COLS) return;
-      if (newRow < 0 || newRow >= ROWS) return;
-
-      player.col = newCol;
-      player.row = newRow;
-
-      if (player.row < maxRowReached) {
-        maxRowReached = player.row;
-        score++;
-        scoreEl.textContent = score;
-      }
-    }
-
-    function update(dt) {
-      inputCooldown -= dt * 1000;
-      if (inputCooldown <= 0) {
-        handleInput();
-        inputCooldown = INPUT_DELAY;
-      }
-
-      // Update entities
-      for (const e of entities) {
-        e.update(dt);
-      }
-
-      // Player position in pixels
-      const px = player.col * TILE + (TILE - player.width) / 2;
-      const py = player.row * TILE + (TILE - player.height) / 2;
-
-      const lane = lanes.find(l => l.rowIndex === player.row);
-      player.onLog = false;
-
-      if (lane) {
-        if (lane.type === LANE_ROAD) {
-          // Check collision with cars
-          for (const e of entities) {
-            if (e.type === "car" && rectsOverlap(px, py, player.width, player.height, e.x, e.y, e.width, e.height)) {
-              endGame();
-              return;
-            }
-          }
-        } else if (lane.type === LANE_WATER) {
-          // Check if on log
-          let onLog = false;
-          let logSpeed = 0;
-          for (const e of entities) {
-            if (e.type === "log" && rectsOverlap(px, py, player.width, player.height, e.x, e.y, e.width, e.height)) {
-              onLog = true;
-              logSpeed = e.speed;
-              break;
-            }
-          }
-          if (!onLog) {
-            endGame();
-            return;
-          } else {
-            // Move with log
-            const dx = logSpeed * dt;
-            const newPx = px + dx;
-            const newCol = Math.floor(newPx / TILE);
-            if (newCol < 0 || newCol >= COLS) {
-              endGame();
-              return;
-            } else {
-              player.col = newCol;
-            }
-          }
-        }
-      }
-    }
-
-    function rectsOverlap(x1, y1, w1, h1, x2, y2, w2, h2) {
-      return !(
-        x1 + w1 < x2 ||
-        x1 > x2 + w2 ||
-        y1 + h1 < y2 ||
-        y1 > y2 + h2
-      );
-    }
-
-    function draw() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      // Draw lanes
-      for (const lane of lanes) {
-        const y = lane.rowIndex * TILE;
-        if (lane.type === LANE_GRASS) {
-          ctx.fillStyle = "#2e7d32";
-        } else if (lane.type === LANE_ROAD) {
-          ctx.fillStyle = "#424242";
-        } else if (lane.type === LANE_WATER) {
-          ctx.fillStyle = "#1565c0";
-        }
-        ctx.fillRect(0, y, canvas.width, TILE);
-      }
-
-      // Draw entities
-      for (const e of entities) {
-        e.draw(ctx);
-      }
-
-      // Draw player
-      const px = player.col * TILE + (TILE - player.width) / 2;
-      const py = player.row * TILE + (TILE - player.height) / 2;
-      ctx.fillStyle = player.color;
-      ctx.fillRect(px, py, player.width, player.height);
-
-      // Optional: grid lines
-      ctx.strokeStyle = "rgba(0,0,0,0.2)";
-      ctx.lineWidth = 1;
-      for (let c = 0; c <= COLS; c++) {
-        ctx.beginPath();
-        ctx.moveTo(c * TILE, 0);
-        ctx.lineTo(c * TILE, canvas.height);
-        ctx.stroke();
-      }
-      for (let r = 0; r <= ROWS; r++) {
-        ctx.beginPath();
-        ctx.moveTo(0, r * TILE);
-        ctx.lineTo(canvas.width, r * TILE);
-        ctx.stroke();
-      }
-    }
-
-    function loop(timestamp) {
-      if (!gameRunning) return;
-      const dt = (timestamp - lastTime) / 1000;
-      lastTime = timestamp;
-
-      update(dt);
-      draw();
-
-      if (gameRunning) {
-        requestAnimationFrame(loop);
-      }
-    }
-
-    // Input handling
-    window.addEventListener("keydown", (e) => {
-      if (!gameRunning && !gameOver) {
-        startGame();
-      } else if (!gameRunning && gameOver) {
-        startGame();
-      }
-      keys[e.code] = true;
-    });
-
-    window.addEventListener("keyup", (e) => {
-      keys[e.code] = false;
-    });
-  </script>
+        <div class="game-container">
+            <!-- If this URL stops working, replace with another HTTPS Crossy Road host -->
+            <iframe 
+                src="https://ubg365.github.io/crossy-road/" 
+                title="Crossy Road" 
+                allowfullscreen>
+            </iframe>
+        </div>
+    </div>
 </body>
 </html>
