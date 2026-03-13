@@ -63,3 +63,10 @@ Players earn points based on their performance, including:
 ---
 
 Enjoy the racing experience and have fun!
+### Additional Browser Games
+
+These games run directly in your browser and are included in this website:
+
+- **Dino Game** — [Play Dino Game](./dino-game.html)
+- **Crossy Road** — [Play Crossy Road](./crossy-road.html)
+- **Smashy Road** — [Play Smashy Road](./smashy-road.html)
