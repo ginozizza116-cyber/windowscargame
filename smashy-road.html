@@ -1,95 +1,30 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>Smashy Road</title>
-<style>
-    body {
-        margin: 0;
-        background: #222;
-        overflow: hidden;
-        font-family: Arial, sans-serif;
-    }
-    #gameCanvas {
-        background: #444;
-        display: block;
-        margin: 0 auto;
-    }
-    #score {
-        position: absolute;
-        top: 10px;
-        left: 10px;
-        color: white;
-        font-size: 24px;
-    }
-</style>
+  <meta charset="UTF-8">
+  <title>Gino's Smashy Road</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <div class="container">
+    <h1>Gino's Smashy Road</h1>
+    <p>A simple car dodging game built for the web.</p>
 
-<canvas id="gameCanvas" width="400" height="600"></canvas>
-<div id="score">Score: 0</div>
+    <a class="play-button" href="smashy-road.html">Play Now</a>
 
-<script>
-const canvas = document.getElementById("gameCanvas");
-const ctx = canvas.getContext("2d");
+    <section class="info">
+      <h2>How to Play</h2>
+      <ul>
+        <li><b>Arrow keys / WASD:</b> Move your car</li>
+        <li><b>Avoid traffic:</b> Don’t crash into other cars</li>
+        <li><b>Goal:</b> Survive as long as possible</li>
+      </ul>
+    </section>
 
-let car = { x: 180, y: 500, width: 40, height: 60, speed: 5 };
-let enemies = [];
-let score = 0;
-let gameOver = false;
-
-function spawnEnemy() {
-    let x = Math.random() * (canvas.width - 40);
-    enemies.push({ x: x, y: -60, width: 40, height: 60, speed: 3 + Math.random() * 3 });
-}
-
-setInterval(spawnEnemy, 800);
-
-function drawCar() {
-    ctx.fillStyle = "yellow";
-    ctx.fillRect(car.x, car.y, car.width, car.height);
-}
-
-function drawEnemies() {
-    ctx.fillStyle = "red";
-    enemies.forEach(e => {
-        ctx.fillRect(e.x, e.y, e.width, e.height);
-        e.y += e.speed;
-    });
-}
-
-function detectCollision(a, b) {
-    return (
-        a.x < b.x + b.width &&
-        a.x + a.width > b.x &&
-        a.y < b.y + b.height &&
-        a.y + a.height > b.y
-    );
-}
-
-function update() {
-    if (gameOver) return;
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    drawCar();
-    drawEnemies();
-
-    enemies.forEach(e => {
-        if (detectCollision(car, e)) {
-            gameOver = true;
-            alert("Game Over! Score: " + score);
-        }
-        if (e.y > canvas.height) {
-            enemies.splice(enemies.indexOf(e), 1);
-            score++;
-            document.getElementById("score").innerText = "Score: " + score;
-        }
-    });
-
-    requestAnimationFrame(update);
-}
-
-document.addEventListener("keydown", e => {
-    if (e.key === "ArrowLeft" && car.x > 0) car.x -= car.speed;
-    if (e.key === "ArrowRight" && car.x 
+    <footer>
+      <p>Made by Gino • Hosted on GitHub Pages</p>
+    </footer>
+  </div>
+</body>
+</html>
