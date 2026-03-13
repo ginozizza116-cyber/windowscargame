@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>ChromeOS Car Game</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Roboto', sans-serif;
+            background: linear-gradient(135deg, #1a73e8 0%, #4285f4 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 10px;
+        }
+        .game-container {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            max-width: 100%;
+        }
+        h1 {
+            color: #1a73e8;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        canvas {
+            background: linear-gradient(180deg, #87ceeb 0%, #e0f6ff 100%);
+            display: block;
+            margin: 0 auto;
+            border: 2px solid #1a73e8;
+            border-radius: 4px;
+            width: 100%;
+            max-width: 600px;
+            height: auto;
+        }
+        #score {
+            text-align: center;
+            font-size: 20px;
+            color: #1a73e8;
+            margin-top: 15px;
+            font-weight: bold;
+        }
+        #instructions {
+            text-align: center;
+            font-size: 14px;
+            color: #666;
+            margin-top: 10px;
+            padding: 10px;
+            background: #f0f0f0;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <h1>🚗 ChromeOS Car Racing</h1>
+        <canvas id="gameCanvas" width="600" height="800"></canvas>
+        <div id="score">Score: 0</div>
+        <div id="instructions">
+            <strong>Controls:</strong> Arrow Keys or WASD | Touch: Tap left/right side of screen
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreDisplay = document.getElementById('score');
+
+        // Game variables
+        let carWidth = 40;
+        let carHeight = 80;
+        let carX = canvas.width / 2 - carWidth / 2;
+        let carY = canvas.height - carHeight - 20;
+        let carSpeed = 0;
+        const maxSpeed = 6;
+
+        let keys = {};
+        let score = 0;
+        let obstacles = [];
+        let powerUps = [];
+        let gameActive = true;
+
+        // Input handling
+        document.addEventListener('keydown', (e) => {
+            keys[e.key.toLowerCase()] = true;
+        });
+
+        document.addEventListener('keyup', (e) => {
+            keys[e.key.toLowerCase()] = false;
+        });
+
+        // Touch controls for ChromeOS
+        canvas.addEventListener('touchstart', (e) => {
+            const touchX = e.touches[0].clientX;
+            const canvasRect = canvas.getBoundingClientRect();
+            if (touchX < canvasRect.left + canvasRect.width / 2) {
+                keys['left'] = true;
+            } else {
+                keys['right'] = true;
+            }
+        });
+
+        canvas.addEventListener('touchend', () => {
+            keys['left'] = false;
+            keys['right'] = false;
+        });
+
+        // Draw car
+        function drawCar() {
+            ctx.fillStyle = '#ea4335';
+            ctx.fillRect(carX, carY, carWidth, carHeight);
+            ctx.fillStyle = '#fbbc04';
+            ctx.fillRect(carX + 5, carY + 10, carWidth - 10, 15);
+            ctx.fillRect(carX + 5, carY + carHeight - 20, carWidth - 10, 15);
+        }
+
+        // Draw obstacle
+        function drawObstacle(obs) {
+            ctx.fillStyle = '#4285f4';
+            ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
+            ctx.strokeStyle = '#1a73e8';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(obs.x, obs.y, obs.width, obs.height);
+        }
+
+        // Draw power-up
+        function drawPowerUp(pu) {
+            ctx.fillStyle = '#34a853';
+            ctx.beginPath();
+            ctx.arc(pu.x + 15, pu.y + 15, 15, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 20px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('+', pu.x + 15, pu.y + 20);
+        }
+
+        // Collision detection
+        function checkCollision(rect1, rect2) {
+            return rect1.x < rect2.x + rect2.width &&
+                   rect1.x + rect1.width > rect2.x &&
+                   rect1.y < rect2.y + rect2.height &&
+                   rect1.y + rect1.height > rect2.y;
+        }
+
+        // Update game state
+        function update() {
+            // Car movement
+            if (keys['arrowright'] || keys['d']) {
+                carX = Math.min(carX + maxSpeed, canvas.width - carWidth);
+            }
+            if (keys['arrowleft'] || keys['a'] || keys['left']) {
+                carX = Math.max(carX - maxSpeed, 0);
+            }
+
+            // Spawn obstacles
+            if (Math.random() < 0.015) {
+                obstacles.push({
+                    x: Math.random() * (canvas.width - 40),
+                    y: -50,
+                    width: 40,
+                    height: 50,
+                    speed: 3 + Math.random() * 2
+                });
+            }
+
+            // Update obstacles
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                obstacles[i].y += obstacles[i].speed;
+
+                if (checkCollision({ x: carX, y: carY, width: carWidth, height: carHeight }, obstacles[i])) {
+                    endGame();
+                    return;
+                }
+
+                if (obstacles[i].y > canvas.height) {
+                    obstacles.splice(i, 1);
+                    score += 10;
+                }
+            }
+
+            // Spawn power-ups
+            if (Math.random() < 0.005) {
+                powerUps.push({
+                    x: Math.random() * (canvas.width - 30),
+                    y: -30,
+                    width: 30,
+                    height: 30,
+                    speed: 2
+                });
+            }
+
+            // Update power-ups
+            for (let i = powerUps.length - 1; i >= 0; i--) {
+                powerUps[i].y += powerUps[i].speed;
+
+                if (checkCollision({ x: carX, y: carY, width: carWidth, height: carHeight }, powerUps[i])) {
+                    score += 50;
+                    powerUps.splice(i, 1);
+                } else if (powerUps[i].y > canvas.height) {
+                    powerUps.splice(i, 1);
+                }
+            }
+        }
+
+        // Draw everything
+        function draw() {
+            // Draw road
+            ctx.fillStyle = '#cccccc';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw lane markers
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([20, 20]);
+            for (let i = -canvas.height; i < canvas.height; i += 40) {
+                ctx.beginPath();
+                ctx.moveTo(canvas.width / 2, i + gameTime * 2);
+                ctx.lineTo(canvas.width / 2, i + gameTime * 2 + 20);
+                ctx.stroke();
+            }
+            ctx.setLineDash([]);
+
+            // Draw game objects
+            drawCar();
+            obstacles.forEach(drawObstacle);
+            powerUps.forEach(drawPowerUp);
+
+            // Update score display
+            scoreDisplay.textContent = `Score: ${score}`;
+
+            if (gameActive) {
+                update();
+                requestAnimationFrame(draw);
+            }
+        }
+
+        let gameTime = 0;
+
+        function endGame() {
+            gameActive = false;
+            alert(`Game Over!\nFinal Score: ${score}\n\nReload the page to play again.`);
+        }
+
+        draw();
+    </script>
+</body>
+</html>
