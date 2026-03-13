@@ -67,6 +67,9 @@ Enjoy the racing experience and have fun!
 
 These games run directly in your browser and are included in this website:
 
-- **Dino Game** — [Play Dino Game](./dino-game.html)
+[- **Dino Game** — [Play Dino Game](./dino-game.html)
 - **Crossy Road** — [Play Crossy Road](./crossy-road.html)
-- **Smashy Road** — [Play Smashy Road](./smashy-road.html)
+- **Smashy Road** — [Play Smashy Road](./smashy-road.html)](https://ginozizza116-cyber.github.io/windowscargame/dino-game.html
+https://ginozizza116-cyber.github.io/windowscargame/crossy-road.html
+https://ginozizza116-cyber.github.io/windowscargame/smashy-road.html
+)
