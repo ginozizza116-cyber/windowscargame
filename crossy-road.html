@@ -1,16 +1,257 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Crossy Road</title>
+    <meta charset="UTF-8">
+    <title>Crossy Road Clone</title>
     <style>
-        body { margin: 0; background: #e8f7ff; font-family: Arial; text-align: center; }
-        iframe { width: 100%; height: 95vh; border: none; }
-        .btn { padding: 12px 20px; background: #0077cc; color: white; text-decoration: none; border-radius: 6px; }
+        body {
+            margin: 0;
+            background: #e8f7ff;
+            font-family: Arial, sans-serif;
+            text-align: center;
+            user-select: none;
+        }
+        #gameContainer {
+            display: inline-block;
+            margin-top: 10px;
+            border: 3px solid #0077cc;
+            background: #a8e6a1;
+        }
+        #info {
+            margin-top: 8px;
+        }
+        #info span {
+            margin: 0 10px;
+            font-weight: bold;
+        }
+        #restartBtn {
+            padding: 8px 16px;
+            background: #0077cc;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            display: none;
+        }
+        #restartBtn:hover {
+            background: #005fa0;
+        }
     </style>
 </head>
 <body>
-    <h1>Crossy Road</h1>
-    <a class="btn" href="https://crossyroad.io/" target="_blank">Open Fullscreen</a>
-    <iframe src="https://crossyroad.io/"></iframe>
+    <h1>Crossy Road Clone</h1>
+    <div id="info">
+        <span>Score: <span id="score">0</span></span>
+        <span>Best: <span id="best">0</span></span>
+    </div>
+    <canvas id="gameContainer" width="400" height="600"></canvas>
+    <br>
+    <button id="restartBtn">Restart</button>
+
+    <script>
+        const canvas = document.getElementById('gameContainer');
+        const ctx = canvas.getContext('2d');
+
+        const scoreEl = document.getElementById('score');
+        const bestEl = document.getElementById('best');
+        const restartBtn = document.getElementById('restartBtn');
+
+        const TILE = 40;
+        const ROWS = canvas.height / TILE;
+        const COLS = canvas.width / TILE;
+
+        let player, lanes, score, bestScore, gameOver;
+
+        bestScore = parseInt(localStorage.getItem('crossy_best') || '0', 10);
+        bestEl.textContent = bestScore;
+
+        function createPlayer() {
+            return {
+                x: Math.floor(COLS / 2),
+                y: ROWS - 1,
+                color: '#ffcc00'
+            };
+        }
+
+        function createLane(y, type) {
+            const speed = (Math.random() * 1.5 + 0.5) * (Math.random() < 0.5 ? 1 : -1);
+            const objs = [];
+            const count = 3 + Math.floor(Math.random() * 3);
+
+            for (let i = 0; i < count; i++) {
+                objs.push({
+                    x: Math.random() * COLS,
+                    width: 1 + Math.floor(Math.random() * 2),
+                });
+            }
+
+            return { y, type, speed, objs };
+        }
+
+        function generateLanes() {
+            lanes = [];
+            for (let y = 0; y < ROWS; y++) {
+                if (y === ROWS - 1) {
+                    lanes.push({ y, type: 'grass', speed: 0, objs: [] });
+                } else if (y % 2 === 0) {
+                    lanes.push(createLane(y, 'road'));
+                } else {
+                    lanes.push(createLane(y, 'river'));
+                }
+            }
+        }
+
+        function resetGame() {
+            player = createPlayer();
+            generateLanes();
+            score = 0;
+            scoreEl.textContent = score;
+            gameOver = false;
+            restartBtn.style.display = 'none';
+        }
+
+        function drawBackground() {
+            for (let lane of lanes) {
+                if (lane.type === 'grass') {
+                    ctx.fillStyle = '#a8e6a1';
+                } else if (lane.type === 'road') {
+                    ctx.fillStyle = '#555';
+                } else {
+                    ctx.fillStyle = '#4da6ff';
+                }
+                ctx.fillRect(0, lane.y * TILE, canvas.width, TILE);
+            }
+        }
+
+        function updateLanes(dt) {
+            for (let lane of lanes) {
+                if (lane.type === 'road' || lane.type === 'river') {
+                    for (let obj of lane.objs) {
+                        obj.x += lane.speed * dt;
+                        if (obj.x < -3) obj.x = COLS + 3;
+                        if (obj.x > COLS + 3) obj.x = -3;
+                    }
+                }
+            }
+        }
+
+        function drawLanes() {
+            for (let lane of lanes) {
+                if (lane.type === 'road') {
+                    ctx.fillStyle = '#222';
+                    for (let obj of lane.objs) {
+                        ctx.fillRect(obj.x * TILE, lane.y * TILE + 8, obj.width * TILE, TILE - 16);
+                    }
+                } else if (lane.type === 'river') {
+                    ctx.fillStyle = '#c2f0ff';
+                    for (let obj of lane.objs) {
+                        ctx.fillRect(obj.x * TILE, lane.y * TILE + 6, obj.width * TILE, TILE - 12);
+                    }
+                }
+            }
+        }
+
+        function drawPlayer() {
+            ctx.fillStyle = player.color;
+            ctx.fillRect(player.x * TILE + 6, player.y * TILE + 4, TILE - 12, TILE - 8);
+            ctx.fillStyle = '#000';
+            ctx.fillRect(player.x * TILE + 10, player.y * TILE + 8, 6, 6);
+            ctx.fillRect(player.x * TILE + TILE - 16, player.y * TILE + 8, 6, 6);
+        }
+
+        function laneAt(y) {
+            return lanes.find(l => l.y === y);
+        }
+
+        function checkCollisions(dt) {
+            const lane = laneAt(player.y);
+            if (!lane) return;
+
+            if (lane.type === 'road') {
+                for (let obj of lane.objs) {
+                    if (player.x + 0.2 < obj.x + obj.width &&
+                        player.x + 0.8 > obj.x) {
+                        triggerGameOver();
+                    }
+                }
+            } else if (lane.type === 'river') {
+                let onLog = false;
+                for (let obj of lane.objs) {
+                    if (player.x + 0.2 < obj.x + obj.width &&
+                        player.x + 0.8 > obj.x) {
+                        onLog = true;
+                        player.x += lane.speed * dt;
+                    }
+                }
+                if (!onLog) {
+                    triggerGameOver();
+                }
+                if (player.x < 0 || player.x > COLS - 1) {
+                    triggerGameOver();
+                }
+            }
+        }
+
+        function triggerGameOver() {
+            if (gameOver) return;
+            gameOver = true;
+            if (score > bestScore) {
+                bestScore = score;
+                localStorage.setItem('crossy_best', bestScore);
+                bestEl.textContent = bestScore;
+            }
+            restartBtn.style.display = 'inline-block';
+        }
+
+        function movePlayer(dx, dy) {
+            if (gameOver) return;
+            const newX = player.x + dx;
+            const newY = player.y + dy;
+            if (newX < 0 || newX > COLS - 1) return;
+            if (newY < 0 || newY > ROWS - 1) return;
+
+            player.x = newX;
+            player.y = newY;
+
+            const laneIndex = ROWS - 1 - player.y;
+            if (laneIndex > score) {
+                score = laneIndex;
+                scoreEl.textContent = score;
+            }
+        }
+
+        window.addEventListener('keydown', (e) => {
+            if (gameOver && (e.key === 'Enter' || e.key === ' ')) {
+                resetGame();
+                return;
+            }
+            if (e.key === 'ArrowUp' || e.key === 'w') movePlayer(0, -1);
+            if (e.key === 'ArrowDown' || e.key === 's') movePlayer(0, 1);
+            if (e.key === 'ArrowLeft' || e.key === 'a') movePlayer(-1, 0);
+            if (e.key === 'ArrowRight' || e.key === 'd') movePlayer(1, 0);
+        });
+
+        restartBtn.addEventListener('click', resetGame);
+
+        let lastTime = 0;
+        function loop(timestamp) {
+            const dt = (timestamp - lastTime) / 1000;
+            lastTime = timestamp;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawBackground();
+            updateLanes(dt);
+            drawLanes();
+            if (!gameOver) {
+                checkCollisions(dt);
+            }
+            drawPlayer();
+
+            requestAnimationFrame(loop);
+        }
+
+        resetGame();
+        requestAnimationFrame(loop);
+    </script>
 </body>
 </html>
