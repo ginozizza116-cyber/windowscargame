@@ -1,629 +1,685 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>Smashy Road Voxel Chase</title>
-<style>
-  html, body {
-    margin: 0;
-    padding: 0;
-    background: #111;
-    overflow: hidden;
-    font-family: Arial, sans-serif;
-    color: #fff;
-  }
-  #ui {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    padding: 8px 12px;
-    background: #000000aa;
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    z-index: 10;
-    font-size: 14px;
-  }
-  #ui span {
-    white-space: nowrap;
-  }
-  #ui button {
-    padding: 4px 10px;
-    cursor: pointer;
-    font-size: 14px;
-  }
-  canvas {
-    display: block;
-    margin: 0 auto;
-    background: #2b2b2b;
-  }
-</style>
+  <meta charset="UTF-8" />
+  <title>Smashy Road – Scroll & Difficulty</title>
+  <style>
+    body {
+      margin: 0;
+      background: #111;
+      color: #fff;
+      font-family: sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    #ui {
+      margin: 10px;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    #gameCanvas {
+      background: #000;
+      border: 2px solid #444;
+      image-rendering: pixelated;
+    }
+    button {
+      padding: 6px 12px;
+      background: #333;
+      color: #fff;
+      border: 1px solid #666;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #555;
+    }
+    .label {
+      min-width: 90px;
+      text-align: center;
+    }
+  </style>
 </head>
 <body>
+  <div id="ui">
+    <span class="label">Score: <span id="scoreSpan">0</span></span>
+    <span class="label">Coins: <span id="coinsSpan">0</span></span>
+    <span class="label">Wanted: <span id="wantedSpan">0</span></span>
+    <span class="label">Mode: <span id="modeSpan">Normal</span></span>
+    <button id="easyBtn">Easy</button>
+    <button id="normalBtn">Normal</button>
+    <button id="hardBtn">Hard</button>
+    <button id="restartBtn" style="display:none;">Restart</button>
+  </div>
 
-<div id="ui">
-  <span>Controls: WASD / Arrow Keys</span>
-  <span id="scoreLabel">Score: 0</span>
-  <span id="coinsLabel">Coins: 0</span>
-  <span id="wantedLabel">Wanted: 0</span>
-  <button id="restartBtn" style="display:none;">Restart</button>
-</div>
+  <canvas id="gameCanvas" width="480" height="640"></canvas>
 
-<canvas id="game" width="900" height="600"></canvas>
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
 
-<script>
-const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d");
+    const scoreSpan = document.getElementById("scoreSpan");
+    const coinsSpan = document.getElementById("coinsSpan");
+    const wantedSpan = document.getElementById("wantedSpan");
+    const modeSpan = document.getElementById("modeSpan");
+    const restartBtn = document.getElementById("restartBtn");
+    const easyBtn = document.getElementById("easyBtn");
+    const normalBtn = document.getElementById("normalBtn");
+    const hardBtn = document.getElementById("hardBtn");
 
-const scoreLabel = document.getElementById("scoreLabel");
-const coinsLabel = document.getElementById("coinsLabel");
-const wantedLabel = document.getElementById("wantedLabel");
-const restartBtn = document.getElementById("restartBtn");
+    const ROAD_WIDTH = 220;
+    const ROAD_X = (canvas.width - ROAD_WIDTH) / 2;
+    const LANE_COUNT = 4;
+    const LANE_WIDTH = ROAD_WIDTH / LANE_COUNT;
 
-const keys = {};
-window.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
-window.addEventListener("keyup",   e => keys[e.key.toLowerCase()] = false);
+    const BIOMES = ["grass", "desert", "water"];
+    const BIOME_LENGTH = 25000;
 
-// --- Sprite loading helpers ---
-function loadSprite(path) {
-  const img = new Image();
-  img.src = path;
-  return img;
-}
+    let player;
+    let traffic = [];
+    let cops = [];
+    let coins = [];
+    let scenery = [];
+    let explosions = [];
 
-const sprites = {
-  player: loadSprite("sprites/player.png"),
-  cop: loadSprite("sprites/cop.png"),
-  traffic1: loadSprite("sprites/traffic1.png"),
-  traffic2: loadSprite("sprites/traffic2.png"),
-  suv: loadSprite("sprites/suv.png"),
-  truck: loadSprite("sprites/truck.png"),
-  explosion: loadSprite("sprites/explosion.png"),
-  tree: loadSprite("sprites/tree.png"),
-  building: loadSprite("sprites/building.png"),
-  rock: loadSprite("sprites/rock.png"),
-  biome_grass: loadSprite("sprites/biome_grass.png"),
-  biome_desert: loadSprite("sprites/biome_desert.png"),
-  biome_water: loadSprite("sprites/biome_water.png")
-};
+    let score = 0;
+    let coinCount = 0;
+    let wanted = 0;
+    let gameOver = false;
+    let lastTime = 0;
+    let timeAlive = 0;
+    let biomeDistance = 0;
+    let currentBiomeIndex = 0;
 
-function spriteReady(img) {
-  return img && img.complete && img.naturalWidth > 0;
-}
+    let trafficTimer = 0;
+    let copTimer = 0;
+    let coinTimer = 0;
+    let sceneryTimer = 0;
 
-// --- World / road layout ---
-const ROAD_WIDTH = 420;
-const ROAD_X = (canvas.width - ROAD_WIDTH) / 2;
-const LANE_COUNT = 6;
-const LANE_WIDTH = ROAD_WIDTH / LANE_COUNT;
+    let worldScroll = 0;
 
-// Biomes
-const BIOMES = ["grass", "desert", "water"];
-let currentBiomeIndex = 0;
-let biomeDistance = 0;
-const BIOME_LENGTH = 8000; // ms of survival before biome change
+    const keys = {};
 
-// Game state
-let player;
-let traffic = [];
-let cops = [];
-let coins = [];
-let scenery = [];
-let explosions = [];
-let score = 0;
-let coinCount = 0;
-let wanted = 0;
-let gameOver = false;
-let lastTime = 0;
-let timeAlive = 0;
+    const sprites = {
+      biome_grass: null,
+      biome_desert: null,
+      biome_water: null,
+      player: null,
+      car1: null,
+      car2: null,
+      cop: null,
+      tree: null,
+      building: null,
+      rock: null,
+      explosion: null
+    };
 
-let worldScroll = 0;
-// Spawn timers
-let trafficTimer = 0;
-let copTimer = 0;
-let coinTimer = 0;
-let sceneryTimer = 0;
-
-// --- Reset ---
-function resetGame() {
-  player = {
-    x: canvas.width / 2,
-    y: canvas.height - 140,
-    w: 40,
-    h: 70,
-    angle: 0,
-    speed: 0,
-    maxSpeed: 4.4,
-    accel: 0.12,
-    friction: 0.05,
-    turnSpeed: 0.0045
-  };
-
-  traffic = [];
-  cops = [];
-  coins = [];
-  scenery = [];
-  explosions = [];
-  score = 0;
-  coinCount = 0;
-  wanted = 0;
-  gameOver = false;
-  lastTime = 0;
-  timeAlive = 0;
-  biomeDistance = 0;
-  currentBiomeIndex = 0;
-
-  trafficTimer = 0;
-  copTimer = 3500;
-  coinTimer = 1500;
-  sceneryTimer = 0;
-
-  restartBtn.style.display = "none";
-  updateUI();
-}
-
-function updateUI() {
-  scoreLabel.textContent = "Score: " + Math.floor(score);
-  coinsLabel.textContent = "Coins: " + coinCount;
-  wantedLabel.textContent = "Wanted: " + wanted.toFixed(1);
-}
-
-// --- Utility ---
-function randRange(a, b) {
-  return a + Math.random() * (b - a);
-}
-
-function choose(arr) {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
-
-// --- Spawners ---
-function spawnTraffic() {
-  const lane = Math.floor(Math.random() * LANE_COUNT);
-  const x = ROAD_X + lane * LANE_WIDTH + LANE_WIDTH / 2;
-  const type = choose(["traffic1", "traffic2", "suv", "truck"]);
-  traffic.push({
-    x,
-    y: -140,
-    w: 40,
-    h: 70,
-    speed: randRange(1.2, 2.4),
-    type
-  });
-}
-
-function spawnCop() {
-  const lane = Math.floor(Math.random() * LANE_COUNT);
-  const x = ROAD_X + lane * LANE_WIDTH + LANE_WIDTH / 2;
-  cops.push({
-    x,
-    y: -140,
-    w: 42,
-    h: 74,
-    angle: Math.PI/2,
-    speed: 2.4 + wanted * 0.35,
-    flashTimer: 0
-  });
-}
-
-function spawnCoin() {
-  const lane = Math.floor(Math.random() * LANE_COUNT);
-  const x = ROAD_X + lane * LANE_WIDTH + LANE_WIDTH / 2;
-  coins.push({
-    x,
-    y: -80,
-    r: 10
-  });
-}
-
-function spawnScenery() {
-  const side = Math.random() < 0.5 ? "left" : "right";
-  const x = side === "left" ? randRange(40, ROAD_X - 40) : randRange(ROAD_X + ROAD_WIDTH + 40, canvas.width - 40);
-  const type = choose(["tree", "building", "rock"]);
-  scenery.push({
-    x,
-    y: -80,
-    type,
-    w: type === "building" ? randRange(40, 70) : 30,
-    h: type === "building" ? randRange(60, 120) : 30
-  });
-}
-
-function spawnExplosion(x, y) {
-  explosions.push({
-    x,
-    y,
-    frame: 0,
-    maxFrames: 16,
-    life: 0
-  });
-}
-
-// --- Updates ---
-function updatePlayer(dt) {
-  const up = keys["w"] || keys["arrowup"];
-  const down = keys["s"] || keys["arrowdown"];
-  const left = keys["a"] || keys["arrowleft"];
-  const right = keys["d"] || keys["arrowright"];
-
-  if (up) player.speed += player.accel * dt;
-  if (down) player.speed -= player.accel * dt;
-
-  if (!up && !down) {
-    if (player.speed > 0) player.speed -= player.friction * dt;
-    if (player.speed < 0) player.speed += player.friction * dt;
-    if (Math.abs(player.speed) < 0.01) player.speed = 0;
-  }
-
-  const extraSpeed = Math.min(2.2, timeAlive * 0.00025);
-  const maxSpeed = player.maxSpeed + extraSpeed;
-
-  if (player.speed > maxSpeed) player.speed = maxSpeed;
-  if (player.speed < -maxSpeed * 0.4) player.speed = -maxSpeed * 0.4;
-
-  if (left) player.angle -= player.turnSpeed * dt * (player.speed !== 0 ? 1 : 0);
-  if (right) player.angle += player.turnSpeed * dt * (player.speed !== 0 ? 1 : 0);
-
-  player.x += Math.sin(player.angle) * player.speed * dt;
-  
-  if (player.x < ROAD_X + player.w/2) player.x = ROAD_X + player.w/2;
-  if (player.x > ROAD_X + ROAD_WIDTH - player.w/2) player.x = ROAD_X + ROAD_WIDTH - player.w/2;
-}
-
-function updateTraffic(dt) {
-  trafficTimer -= dt;
-  if (trafficTimer <= 0) {
-    spawnTraffic();
-    trafficTimer = 900;
-  }
-
-  for (let i = traffic.length - 1; i >= 0; i--) {
-    const car = traffic[i];
-
-    // car's own movement
-    car.y += car.speed * dt * 0.6;
-
-    // world scrolling movement
-    car.y += worldScroll * 0.02;
-
-    if (car.y > canvas.height + 200) {
-      traffic.splice(i, 1);
+    function loadSprite(key, src) {
+      const img = new Image();
+      img.src = src;
+      sprites[key] = img;
     }
-  }
-}
 
-function updateCops(dt) {
-  copTimer -= dt;
-  const baseCopRate = 5000;
-  const copFactor = Math.max(0.35, 1.0 - wanted * 0.12);
-  if (copTimer <= 0) {
-    spawnCop();
-    copTimer = baseCopRate * copFactor;
-  }
+    // You can replace these with your own assets
+    loadSprite("biome_grass", "https://i.imgur.com/2uQ0p5P.png");
+    loadSprite("biome_desert", "https://i.imgur.com/2uQ0p5P.png");
+    loadSprite("biome_water", "https://i.imgur.com/2uQ0p5P.png");
+    loadSprite("player", "https://i.imgur.com/4AiXzf8.png");
+    loadSprite("car1", "https://i.imgur.com/4AiXzf8.png");
+    loadSprite("car2", "https://i.imgur.com/4AiXzf8.png");
+    loadSprite("cop", "https://i.imgur.com/4AiXzf8.png");
+    loadSprite("tree", "https://i.imgur.com/4AiXzf8.png");
+    loadSprite("building", "https://i.imgur.com/4AiXzf8.png");
+    loadSprite("rock", "https://i.imgur.com/4AiXzf8.png");
+    loadSprite("explosion", "https://i.imgur.com/4AiXzf8.png");
 
-  for (let i = cops.length - 1; i >= 0; i--) {
-    const cop = cops[i];
-    const dx = player.x - cop.x;
-    const dy = player.y - cop.y;
-    const targetAngle = Math.atan2(dx, -dy);
-
-    let diff = targetAngle - cop.angle;
-    while (diff > Math.PI) diff -= 2*Math.PI;
-    while (diff < -Math.PI) diff += 2*Math.PI;
-
-    cop.angle += diff * 0.0028 * dt;
-
-    // cop's own movement
-    cop.x += Math.sin(cop.angle) * cop.speed * dt;
-    cop.y -= Math.cos(cop.angle) * cop.speed * dt;
-
-    // world scrolling movement (ADD THIS)
-    cop.y += worldScroll * 0.02;
-
-    cop.flashTimer += dt;
-
-    if (cop.y > canvas.height + 220) cops.splice(i, 1);
-  }
-}
-
-function updateCoins(dt) {
-  for (let i = coins.length - 1; i >= 0; i--) {
-    const c = coins[i];
-
-    // world scrolling movement
-    c.y += worldScroll * 0.02;
-
-    // remove coins that scroll off-screen
-    if (c.y > canvas.height + 200) {
-      coins.splice(i, 1);
+    function spriteReady(img) {
+      return img && img.complete && img.naturalWidth > 0;
     }
-  }
-}
 
-function updateScenery(dt) {
-  for (let i = scenery.length - 1; i >= 0; i--) {
-    const s = scenery[i];
+    const DIFFICULTY_MODES = {
+      Easy: {
+        trafficBase: 1300,
+        copBase: 7000,
+        coinBase: 1800,
+        scrollMult: 0.8,
+        maxSpeed: 0.25
+      },
+      Normal: {
+        trafficBase: 1000,
+        copBase: 5500,
+        coinBase: 1500,
+        scrollMult: 1.0,
+        maxSpeed: 0.32
+      },
+      Hard: {
+        trafficBase: 800,
+        copBase: 4200,
+        coinBase: 1300,
+        scrollMult: 1.25,
+        maxSpeed: 0.38
+      }
+    };
 
-    // world scrolling movement
-    s.y += worldScroll * 0.02;
+    let currentModeName = "Normal";
+    let currentMode = DIFFICULTY_MODES[currentModeName];
 
-    // remove scenery that scrolls off-screen
-    if (s.y > canvas.height + 200) {
-      scenery.splice(i, 1);
+    function setMode(name) {
+      currentModeName = name;
+      currentMode = DIFFICULTY_MODES[name];
+      modeSpan.textContent = name;
+      resetGame();
     }
-  }
-}
 
-function updateExplosions(dt) {
-  for (let i = explosions.length - 1; i >= 0; i--) {
-    const ex = explosions[i];
-    ex.life += dt;
-    const frameTime = 60;
-    ex.frame = Math.floor(ex.life / frameTime);
-    if (ex.frame >= ex.maxFrames) {
-      explosions.splice(i, 1);
-    }
-  }
-}
+    easyBtn.addEventListener("click", () => setMode("Easy"));
+    normalBtn.addEventListener("click", () => setMode("Normal"));
+    hardBtn.addEventListener("click", () => setMode("Hard"));
 
-// Biome progression
-function updateBiome(dt) {
-  biomeDistance += dt;
-  if (biomeDistance > BIOME_LENGTH) {
-    biomeDistance = 0;
-    currentBiomeIndex = (currentBiomeIndex + 1) % BIOMES.length;
-  }
-}
+    window.addEventListener("keydown", (e) => {
+      keys[e.key.toLowerCase()] = true;
+      if (e.key === "ArrowUp" || e.key === "ArrowDown" ||
+          e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        keys[e.key.toLowerCase()] = true;
+      }
+    });
 
-// --- Collision helpers ---
-function rectOverlap(a, b) {
-  return !(
-    a.x + a.w/2 < b.x - b.w/2 ||
-    a.x - a.w/2 > b.x + b.w/2 ||
-    a.y + a.h/2 < b.y - b.h/2 ||
-    a.y - a.h/2 > b.y + b.h/2
-  );
-}
+    window.addEventListener("keyup", (e) => {
+      keys[e.key.toLowerCase()] = false;
+      if (e.key === "ArrowUp" || e.key === "ArrowDown" ||
+          e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        keys[e.key.toLowerCase()] = false;
+      }
+    });
 
-function circleRectOverlap(circle, rect) {
-  const closestX = Math.max(rect.x - rect.w/2, Math.min(circle.x, rect.x + rect.w/2));
-  const closestY = Math.max(rect.y - rect.h/2, Math.min(circle.y, rect.y + rect.h/2));
-  const dx = circle.x - closestX;
-  const dy = circle.y - closestY;
-  return dx*dx + dy*dy < circle.r*circle.r;
-}
+    function resetGame() {
+      player = {
+        x: ROAD_X + ROAD_WIDTH / 2,
+        y: canvas.height * 0.7,
+        w: 40,
+        h: 70,
+        angle: 0,
+        speed: 0,
+        accel: 0.0006,
+        friction: 0.0005,
+        turnSpeed: 0.004,
+        maxSpeed: currentMode.maxSpeed
+      };
 
-function checkCollisions() {
-  const p = { x: player.x, y: player.y, w: player.w, h: player.h };
+      traffic = [];
+      cops = [];
+      coins = [];
+      scenery = [];
+      explosions = [];
 
-  for (let i = traffic.length - 1; i >= 0; i--) {
-    const car = traffic[i];
-    if (rectOverlap(p, car)) {
-      spawnExplosion(player.x, player.y);
-      traffic.splice(i, 1);
-      endGame("Crashed into traffic");
-      return;
-    }
-  }
+      score = 0;
+      coinCount = 0;
+      wanted = 0;
+      gameOver = false;
+      lastTime = 0;
+      timeAlive = 0;
+      biomeDistance = 0;
+      currentBiomeIndex = 0;
+      worldScroll = 0;
 
-  for (let i = cops.length - 1; i >= 0; i--) {
-    const cop = cops[i];
-    if (rectOverlap(p, cop)) {
-      spawnExplosion(player.x, player.y);
-      cops.splice(i, 1);
-      endGame("Busted by cops");
-      return;
-    }
-  }
+      trafficTimer = 0;
+      copTimer = 2000;
+      coinTimer = 800;
+      sceneryTimer = 0;
 
-  for (let i = coins.length - 1; i >= 0; i--) {
-    const c = coins[i];
-    if (circleRectOverlap({x:c.x, y:c.y, r:c.r}, p)) {
-      coins.splice(i, 1);
-      coinCount++;
-      wanted += 0.25;
+      restartBtn.style.display = "none";
       updateUI();
     }
-  }
-}
 
-function endGame(reason) {
-  gameOver = true;
-  restartBtn.style.display = "inline-block";
-}
+    function updateUI() {
+      scoreSpan.textContent = Math.floor(score);
+      coinsSpan.textContent = coinCount;
+      wantedSpan.textContent = wanted.toFixed(1);
+    }
 
-// --- Drawing ---
-function drawBiomeBackground() {
-  const biome = BIOMES[currentBiomeIndex];
-  const img = sprites["biome_" + biome];
+    function spawnTraffic() {
+      const lane = Math.floor(Math.random() * LANE_COUNT);
+      const x = ROAD_X + lane * LANE_WIDTH + LANE_WIDTH / 2;
+      const y = -120;
+      const type = Math.random() < 0.5 ? "car1" : "car2";
+      const speed = 0.18 + Math.random() * 0.08;
+      traffic.push({
+        x,
+        y,
+        w: 40,
+        h: 70,
+        speed,
+        type
+      });
+    }
 
-  if (spriteReady(img)) {
-    const tileH = img.naturalHeight;
-    const offset = worldScroll % tileH;
+    function spawnCop() {
+      const lane = Math.floor(Math.random() * LANE_COUNT);
+      const x = ROAD_X + lane * LANE_WIDTH + LANE_WIDTH / 2;
+      const y = canvas.height + 120;
+      const speed = 0.22 + Math.random() * 0.08;
+      cops.push({
+        x,
+        y,
+        w: 42,
+        h: 72,
+        speed,
+        angle: -Math.PI,
+        flashTimer: 0
+      });
+    }
 
-    // draw two tiles so the scroll loops seamlessly
-    ctx.drawImage(img, 0, -tileH + offset, canvas.width, tileH);
-    ctx.drawImage(img, 0, offset, canvas.width, tileH);
-  } else {
-    ctx.fillStyle =
-      biome === "grass" ? "#3b5b2b" :
-      biome === "desert" ? "#c2a35b" :
-      "#2b4b7b";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-  }
+    function spawnCoin() {
+      const lane = Math.floor(Math.random() * LANE_COUNT);
+      const x = ROAD_X + lane * LANE_WIDTH + LANE_WIDTH / 2;
+      const y = -40;
+      coins.push({
+        x,
+        y,
+        r: 10
+      });
+    }
 
-  // road
-  ctx.fillStyle = "#3a3a3a";
-  ctx.fillRect(ROAD_X, 0, ROAD_WIDTH, canvas.height);
-
-  // lane lines
-  ctx.strokeStyle = "#ffffff88";
-  ctx.lineWidth = 3;
-  ctx.setLineDash([25, 25]);
-  for (let i = 1; i < LANE_COUNT; i++) {
-    const x = ROAD_X + i * LANE_WIDTH;
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, canvas.height);
-    ctx.stroke();
-  }
-  ctx.setLineDash([]);
-}
-
-function drawScenery() {
-  for (const s of scenery) {
-    if (s.type === "tree") {
-      if (spriteReady(sprites.tree)) {
-        ctx.drawImage(sprites.tree, s.x - 24, s.y - 48, 48, 48);
-      } else {
-        ctx.fillStyle = "#3b7a2b";
-        ctx.beginPath();
-        ctx.arc(s.x, s.y, 15, 0, Math.PI*2);
-        ctx.fill();
+    function spawnScenery() {
+      const side = Math.random() < 0.5 ? "left" : "right";
+      const x = side === "left"
+        ? ROAD_X - 40 - Math.random() * 40
+        : ROAD_X + ROAD_WIDTH + 40 + Math.random() * 40;
+      const y = -40;
+      const types = ["tree", "building", "rock"];
+      const type = types[Math.floor(Math.random() * types.length)];
+      let w = 40, h = 60;
+      if (type === "building") {
+        w = 60 + Math.random() * 40;
+        h = 80 + Math.random() * 60;
       }
-    } else if (s.type === "building") {
-      if (spriteReady(sprites.building)) {
-        ctx.drawImage(sprites.building, s.x - s.w/2, s.y - s.h, s.w, s.h);
-      } else {
-        ctx.fillStyle = "#555577";
-        ctx.fillRect(s.x - s.w/2, s.y - s.h, s.w, s.h);
+      scenery.push({ x, y, type, w, h });
+    }
+
+    function spawnExplosion(x, y) {
+      explosions.push({
+        x,
+        y,
+        life: 0,
+        frame: 0,
+        maxFrames: 16
+      });
+    }
+
+    function updatePlayer(dt) {
+      const up = keys["w"] || keys["arrowup"];
+      const down = keys["s"] || keys["arrowdown"];
+      const left = keys["a"] || keys["arrowleft"];
+      const right = keys["d"] || keys["arrowright"];
+
+      if (up) player.speed += player.accel * dt;
+      if (down) player.speed -= player.accel * dt;
+
+      if (!up && !down) {
+        if (player.speed > 0) player.speed -= player.friction * dt;
+        if (player.speed < 0) player.speed += player.friction * dt;
+        if (Math.abs(player.speed) < 0.01) player.speed = 0;
       }
-    } else if (s.type === "rock") {
-      if (spriteReady(sprites.rock)) {
-        ctx.drawImage(sprites.rock, s.x - 16, s.y - 16, 32, 32);
-      } else {
-        ctx.fillStyle = "#777";
-        ctx.beginPath();
-        ctx.arc(s.x, s.y, 10, 0, Math.PI*2);
-        ctx.fill();
+
+      const extraSpeed = Math.min(0.18, timeAlive * 0.00015);
+      const maxSpeed = player.maxSpeed + extraSpeed;
+
+      if (player.speed > maxSpeed) player.speed = maxSpeed;
+      if (player.speed < -maxSpeed * 0.4) player.speed = -maxSpeed * 0.4;
+
+      if (left) player.angle -= player.turnSpeed * dt * (player.speed !== 0 ? 1 : 0);
+      if (right) player.angle += player.turnSpeed * dt * (player.speed !== 0 ? 1 : 0);
+
+      player.x += Math.sin(player.angle) * player.speed * dt;
+
+      if (player.x < ROAD_X + player.w / 2) player.x = ROAD_X + player.w / 2;
+      if (player.x > ROAD_X + ROAD_WIDTH - player.w / 2) player.x = ROAD_X + ROAD_WIDTH - player.w / 2;
+    }
+
+    function updateScroll(dt) {
+      const base = player.speed * currentMode.scrollMult;
+      const wantedBoost = 0.02 * wanted;
+      const timeBoost = Math.min(0.25, timeAlive * 0.00005);
+      worldScroll += (base + wantedBoost + timeBoost) * dt;
+    }
+
+    function updateTraffic(dt) {
+      const difficultyFactor = 1 - Math.min(0.5, timeAlive * 0.00005);
+      trafficTimer -= dt;
+      if (trafficTimer <= 0) {
+        spawnTraffic();
+        trafficTimer = currentMode.trafficBase * difficultyFactor;
+      }
+
+      for (let i = traffic.length - 1; i >= 0; i--) {
+        const car = traffic[i];
+        car.y += car.speed * dt * 0.6;
+        car.y += worldScroll * 0.02;
+        if (car.y > canvas.height + 200) traffic.splice(i, 1);
       }
     }
-  }
-}
 
-function drawSpriteCar(img, x, y, w, h, angle, fallbackBody, fallbackRoof) {
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.rotate(angle);
-  if (spriteReady(img)) {
-    ctx.drawImage(img, -w/2, -h/2, w, h);
-  } else {
-    ctx.fillStyle = fallbackBody;
-    ctx.fillRect(-w/2, -h/2, w, h);
-    ctx.fillStyle = fallbackRoof;
-    ctx.fillRect(-w*0.3, -h*0.2, w*0.6, h*0.4);
-  }
-  ctx.restore();
-}
+    function updateCops(dt) {
+      const difficultyFactor = 1 - Math.min(0.4, timeAlive * 0.00004);
+      copTimer -= dt;
+      const baseCopRate = currentMode.copBase;
+      const copFactor = Math.max(0.35, 1.0 - wanted * 0.12);
+      if (copTimer <= 0) {
+        spawnCop();
+        copTimer = baseCopRate * copFactor * difficultyFactor;
+      }
 
-function drawTraffic() {
-  for (const car of traffic) {
-    const img = sprites[car.type] || null;
-    drawSpriteCar(img, car.x, car.y, car.w, car.h, 0, "#888", "#444");
-  }
-}
+      for (let i = cops.length - 1; i >= 0; i--) {
+        const cop = cops[i];
+        const dx = player.x - cop.x;
+        const dy = player.y - cop.y;
+        const targetAngle = Math.atan2(dx, -dy);
 
-function drawCops() {
-  for (const cop of cops) {
-    drawSpriteCar(sprites.cop, cop.x, cop.y, cop.w, cop.h, cop.angle, "#2222ff", "#ffffff");
+        let diff = targetAngle - cop.angle;
+        while (diff > Math.PI) diff -= 2 * Math.PI;
+        while (diff < -Math.PI) diff += 2 * Math.PI;
 
-    ctx.save();
-    ctx.translate(cop.x, cop.y - cop.h/2 + 8);
-    const flash = Math.floor(cop.flashTimer / 200) % 2 === 0;
-    ctx.fillStyle = flash ? "#ff0000" : "#550000";
-    ctx.fillRect(-12, -4, 10, 8);
-    ctx.fillStyle = flash ? "#00ffff" : "#003333";
-    ctx.fillRect(2, -4, 10, 8);
-    ctx.restore();
-  }
-}
+        cop.angle += diff * 0.0028 * dt;
 
-function drawCoins() {
-  for (const c of coins) {
-    ctx.fillStyle = "#ffdd33";
-    ctx.beginPath();
-    ctx.arc(c.x, c.y, c.r, 0, Math.PI*2);
-    ctx.fill();
-    ctx.strokeStyle = "#aa9900";
-    ctx.lineWidth = 2;
-    ctx.stroke();
-  }
-}
+        cop.x += Math.sin(cop.angle) * cop.speed * dt;
+        cop.y -= Math.cos(cop.angle) * cop.speed * dt;
+        cop.y += worldScroll * 0.02;
 
-function drawPlayer() {
-  drawSpriteCar(sprites.player, player.x, player.y, player.w, player.h, player.angle, "#ffcc00", "#ffee66");
-}
+        cop.flashTimer += dt;
 
-function drawExplosions() {
-  const img = sprites.explosion;
-  for (const ex of explosions) {
-    if (spriteReady(img)) {
-      const cols = 4;
-      const rows = 4;
-      const totalFrames = cols * rows;
-      const frameIndex = Math.min(ex.frame, totalFrames - 1);
-      const fw = img.naturalWidth / cols;
-      const fh = img.naturalHeight / rows;
-      const sx = (frameIndex % cols) * fw;
-      const sy = Math.floor(frameIndex / cols) * fh;
-      const size = 80;
+        if (cop.y > canvas.height + 220) cops.splice(i, 1);
+      }
+    }
+
+    function updateCoins(dt) {
+      const difficultyFactor = 1 - Math.min(0.3, timeAlive * 0.00003);
+      coinTimer -= dt;
+      if (coinTimer <= 0) {
+        spawnCoin();
+        coinTimer = currentMode.coinBase * difficultyFactor;
+      }
+
+      for (let i = coins.length - 1; i >= 0; i--) {
+        const c = coins[i];
+        c.y += worldScroll * 0.02;
+        if (c.y > canvas.height + 200) coins.splice(i, 1);
+      }
+    }
+
+    function updateScenery(dt) {
+      sceneryTimer -= dt;
+      if (sceneryTimer <= 0) {
+        spawnScenery();
+        sceneryTimer = 900;
+      }
+
+      for (let i = scenery.length - 1; i >= 0; i--) {
+        const s = scenery[i];
+        s.y += worldScroll * 0.02;
+        if (s.y > canvas.height + 200) scenery.splice(i, 1);
+      }
+    }
+
+    function updateExplosions(dt) {
+      for (let i = explosions.length - 1; i >= 0; i--) {
+        const ex = explosions[i];
+        ex.life += dt;
+        const frameTime = 60;
+        ex.frame = Math.floor(ex.life / frameTime);
+        if (ex.frame >= ex.maxFrames) explosions.splice(i, 1);
+      }
+    }
+
+    function updateBiome(dt) {
+      biomeDistance += dt;
+      if (biomeDistance > BIOME_LENGTH) {
+        biomeDistance = 0;
+        currentBiomeIndex = (currentBiomeIndex + 1) % BIOMES.length;
+      }
+    }
+
+    function rectOverlap(a, b) {
+      return !(
+        a.x + a.w / 2 < b.x - b.w / 2 ||
+        a.x - a.w / 2 > b.x + b.w / 2 ||
+        a.y + a.h / 2 < b.y - b.h / 2 ||
+        a.y - a.h / 2 > b.y + b.h / 2
+      );
+    }
+
+    function circleRectOverlap(circle, rect) {
+      const closestX = Math.max(rect.x - rect.w / 2, Math.min(circle.x, rect.x + rect.w / 2));
+      const closestY = Math.max(rect.y - rect.h / 2, Math.min(circle.y, rect.y + rect.h / 2));
+      const dx = circle.x - closestX;
+      const dy = circle.y - closestY;
+      return dx * dx + dy * dy < circle.r * circle.r;
+    }
+
+    function checkCollisions() {
+      const p = { x: player.x, y: player.y, w: player.w, h: player.h };
+
+      for (let i = traffic.length - 1; i >= 0; i--) {
+        const car = traffic[i];
+        if (rectOverlap(p, car)) {
+          spawnExplosion(player.x, player.y);
+          traffic.splice(i, 1);
+          endGame("Crashed into traffic");
+          return;
+        }
+      }
+
+      for (let i = cops.length - 1; i >= 0; i--) {
+        const cop = cops[i];
+        if (rectOverlap(p, cop)) {
+          spawnExplosion(player.x, player.y);
+          cops.splice(i, 1);
+          endGame("Busted by cops");
+          return;
+        }
+      }
+
+      for (let i = coins.length - 1; i >= 0; i--) {
+        const c = coins[i];
+        if (circleRectOverlap({ x: c.x, y: c.y, r: c.r }, p)) {
+          coins.splice(i, 1);
+          coinCount++;
+          wanted += 0.25;
+          updateUI();
+        }
+      }
+    }
+
+    function endGame(reason) {
+      gameOver = true;
+      restartBtn.style.display = "inline-block";
+    }
+
+    function drawBiomeBackground() {
+      const biome = BIOMES[currentBiomeIndex];
+      const img = sprites["biome_" + biome];
+
+      if (spriteReady(img)) {
+        const tileH = img.naturalHeight || canvas.height;
+        const offset = worldScroll % tileH;
+
+        ctx.drawImage(img, 0, -tileH + offset, canvas.width, tileH);
+        ctx.drawImage(img, 0, offset, canvas.width, tileH);
+      } else {
+        ctx.fillStyle =
+          biome === "grass" ? "#3b5b2b" :
+          biome === "desert" ? "#c2a35b" :
+          "#2b4b7b";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+
+      ctx.fillStyle = "#3a3a3a";
+      ctx.fillRect(ROAD_X, 0, ROAD_WIDTH, canvas.height);
+
+      ctx.strokeStyle = "#ffffff88";
+      ctx.lineWidth = 3;
+      ctx.setLineDash([25, 25]);
+      for (let i = 1; i < LANE_COUNT; i++) {
+        const x = ROAD_X + i * LANE_WIDTH;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, canvas.height);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+    }
+
+    function drawScenery() {
+      for (const s of scenery) {
+        if (s.type === "tree") {
+          if (spriteReady(sprites.tree)) {
+            ctx.drawImage(sprites.tree, s.x - 24, s.y - 48, 48, 48);
+          } else {
+            ctx.fillStyle = "#3b7a2b";
+            ctx.beginPath();
+            ctx.arc(s.x, s.y, 15, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        } else if (s.type === "building") {
+          if (spriteReady(sprites.building)) {
+            ctx.drawImage(sprites.building, s.x - s.w / 2, s.y - s.h, s.w, s.h);
+          } else {
+            ctx.fillStyle = "#555577";
+            ctx.fillRect(s.x - s.w / 2, s.y - s.h, s.w, s.h);
+          }
+        } else if (s.type === "rock") {
+          if (spriteReady(sprites.rock)) {
+            ctx.drawImage(sprites.rock, s.x - 16, s.y - 16, 32, 32);
+          } else {
+            ctx.fillStyle = "#777";
+            ctx.beginPath();
+            ctx.arc(s.x, s.y, 10, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      }
+    }
+
+    function drawSpriteCar(img, x, y, w, h, angle, fallbackBody, fallbackRoof) {
       ctx.save();
-      ctx.translate(ex.x, ex.y);
-      ctx.drawImage(img, sx, sy, fw, fh, -size/2, -size/2, size, size);
+      ctx.translate(x, y);
+      ctx.rotate(angle);
+      if (spriteReady(img)) {
+        ctx.drawImage(img, -w / 2, -h / 2, w, h);
+      } else {
+        ctx.fillStyle = fallbackBody;
+        ctx.fillRect(-w / 2, -h / 2, w, h);
+        ctx.fillStyle = fallbackRoof;
+        ctx.fillRect(-w * 0.3, -h * 0.2, w * 0.6, h * 0.4);
+      }
       ctx.restore();
-    } else {
-      ctx.fillStyle = "orange";
-      ctx.beginPath();
-      ctx.arc(ex.x, ex.y, 30, 0, Math.PI*2);
-      ctx.fill();
     }
-  }
-}
 
-// --- Main loop ---
-function loop(timestamp) {
-  const dt = lastTime ? (timestamp - lastTime) : 16;
-  lastTime = timestamp;
+    function drawTraffic() {
+      for (const car of traffic) {
+        const img = sprites[car.type] || null;
+        drawSpriteCar(img, car.x, car.y, car.w, car.h, 0, "#888", "#444");
+      }
+    }
 
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+    function drawCops() {
+      for (const cop of cops) {
+        drawSpriteCar(sprites.cop, cop.x, cop.y, cop.w, cop.h, cop.angle, "#2222ff", "#ffffff");
 
-  drawBiomeBackground();
-  drawScenery();
+        ctx.save();
+        ctx.translate(cop.x, cop.y - cop.h / 2 + 8);
+        const flash = Math.floor(cop.flashTimer / 200) % 2 === 0;
+        ctx.fillStyle = flash ? "#ff0000" : "#550000";
+        ctx.fillRect(-12, -4, 10, 8);
+        ctx.fillStyle = flash ? "#00ffff" : "#003333";
+        ctx.fillRect(2, -4, 10, 8);
+        ctx.restore();
+      }
+    }
 
-  if (!gameOver) {
-    timeAlive += dt;
-    updateBiome(dt);
-    updatePlayer(dt);
-    updateScroll(dt);
-    updateTraffic(dt);
-    updateCops(dt);
-    updateCoins(dt);
-    updateScenery(dt);
-    updateExplosions(dt);
-    checkCollisions();
+    function drawCoins() {
+      for (const c of coins) {
+        ctx.fillStyle = "#ffdd33";
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "#aa9900";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+    }
 
-    score += dt * 0.01;
-    wanted = Math.min(5, wanted + dt * 0.00012);
-    updateUI();
-  }
+    function drawPlayer() {
+      drawSpriteCar(sprites.player, player.x, player.y, player.w, player.h, player.angle, "#ffcc00", "#ffee66");
+    }
 
-  drawTraffic();
-  drawCops();
-  drawCoins();
-  drawPlayer();
-  drawExplosions();
+    function drawExplosions() {
+      const img = sprites.explosion;
+      for (const ex of explosions) {
+        if (spriteReady(img)) {
+          const cols = 4;
+          const rows = 4;
+          const totalFrames = cols * rows;
+          const frameIndex = Math.min(ex.frame, totalFrames - 1);
+          const fw = img.naturalWidth / cols;
+          const fh = img.naturalHeight / rows;
+          const sx = (frameIndex % cols) * fw;
+          const sy = Math.floor(frameIndex / cols) * fh;
+          const size = 80;
+          ctx.save();
+          ctx.translate(ex.x, ex.y);
+          ctx.drawImage(img, sx, sy, fw, fh, -size / 2, -size / 2, size, size);
+          ctx.restore();
+        } else {
+          ctx.fillStyle = "orange";
+          ctx.beginPath();
+          ctx.arc(ex.x, ex.y, 30, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
 
-  requestAnimationFrame(loop);
-}
+    function loop(timestamp) {
+      const dt = lastTime ? (timestamp - lastTime) : 16;
+      lastTime = timestamp;
 
-restartBtn.addEventListener("click", () => {
-  resetGame();
-});
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-resetGame();
-requestAnimationFrame(loop);
-</script>
+      drawBiomeBackground();
+      drawScenery();
 
+      if (!gameOver) {
+        timeAlive += dt;
+        updateBiome(dt);
+        updatePlayer(dt);
+        updateScroll(dt);
+        updateTraffic(dt);
+        updateCops(dt);
+        updateCoins(dt);
+        updateScenery(dt);
+        updateExplosions(dt);
+        checkCollisions();
+
+        score += dt * 0.01;
+        wanted = Math.min(5, wanted + dt * 0.00012);
+        updateUI();
+      }
+
+      drawTraffic();
+      drawCops();
+      drawCoins();
+      drawPlayer();
+      drawExplosions();
+
+      requestAnimationFrame(loop);
+    }
+
+    restartBtn.addEventListener("click", () => {
+      resetGame();
+    });
+
+    resetGame();
+    requestAnimationFrame(loop);
+  </script>
 </body>
 </html>
