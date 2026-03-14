@@ -1,30 +1,344 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Gino's Smashy Road</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8" />
+  <title>Smashy Road Clone</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #111;
+      color: #fff;
+      font-family: sans-serif;
+      overflow: hidden;
+    }
+    #gameContainer {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      height: 100vh;
+    }
+    #ui {
+      margin: 8px;
+      text-align: center;
+    }
+    #ui button {
+      padding: 6px 12px;
+      margin: 0 4px;
+      cursor: pointer;
+    }
+    canvas {
+      border: 2px solid #444;
+      background: #2b2b2b;
+    }
+  </style>
 </head>
 <body>
-  <div class="container">
-    <h1>Gino's Smashy Road</h1>
-    <p>A simple car dodging game built for the web.</p>
-
-    <a class="play-button" href="smashy-road.html">Play Now</a>
-
-    <section class="info">
-      <h2>How to Play</h2>
-      <ul>
-        <li><b>Arrow keys / WASD:</b> Move your car</li>
-        <li><b>Avoid traffic:</b> Don’t crash into other cars</li>
-        <li><b>Goal:</b> Survive as long as possible</li>
-      </ul>
-    </section>
-
-    <footer>
-      <p>Made by Gino • Hosted on GitHub Pages</p>
-    </footer>
+<div id="gameContainer">
+  <div id="ui">
+    <span id="scoreLabel">Score: 0</span>
+    <span id="statusLabel" style="margin-left:16px;">WASD or Arrow Keys to drive</span>
+    <button id="restartBtn" style="display:none;">Restart</button>
   </div>
+  <canvas id="game" width="800" height="600"></canvas>
+</div>
+
+<script>
+  const canvas = document.getElementById("game");
+  const ctx = canvas.getContext("2d");
+  const scoreLabel = document.getElementById("scoreLabel");
+  const statusLabel = document.getElementById("statusLabel");
+  const restartBtn = document.getElementById("restartBtn");
+
+  const keys = {};
+  window.addEventListener("keydown", e => { keys[e.key.toLowerCase()] = true; });
+  window.addEventListener("keyup",   e => { keys[e.key.toLowerCase()] = false; });
+
+  const ROAD_WIDTH = 400;
+  const ROAD_X = (canvas.width - ROAD_WIDTH) / 2;
+  const LANE_WIDTH = 50;
+
+  let gameOver = false;
+  let score = 0;
+  let lastTime = 0;
+
+  const player = {
+    x: canvas.width / 2,
+    y: canvas.height - 120,
+    width: 30,
+    height: 50,
+    angle: 0,
+    speed: 0,
+    maxSpeed: 4,
+    accel: 0.12,
+    friction: 0.06,
+    turnSpeed: 0.05
+  };
+
+  const cops = [];
+  const traffic = [];
+  const world = {
+    scrollY: 0,
+    trafficSpawnTimer: 0,
+    copSpawnTimer: 0
+  };
+
+  function resetGame() {
+    gameOver = false;
+    score = 0;
+    player.x = canvas.width / 2;
+    player.y = canvas.height - 120;
+    player.angle = 0;
+    player.speed = 0;
+    cops.length = 0;
+    traffic.length = 0;
+    world.scrollY = 0;
+    world.trafficSpawnTimer = 0;
+    world.copSpawnTimer = 0;
+    statusLabel.textContent = "WASD or Arrow Keys to drive";
+    restartBtn.style.display = "none";
+  }
+
+  function spawnTraffic() {
+    const lanes = [-3, -2, -1, 0, 1, 2, 3];
+    const lane = lanes[Math.floor(Math.random() * lanes.length)];
+    const x = canvas.width / 2 + lane * LANE_WIDTH;
+    const y = -80;
+    const speed = 1 + Math.random() * 1.5;
+    traffic.push({ x, y, width: 30, height: 50, speed });
+  }
+
+  function spawnCop() {
+    const side = Math.random() < 0.5 ? -1 : 1;
+    const x = canvas.width / 2 + side * (ROAD_WIDTH / 2 - 40);
+    const y = canvas.height + 80;
+    cops.push({
+      x,
+      y,
+      width: 30,
+      height: 50,
+      speed: 2.2,
+      angle: -Math.PI / 2
+    });
+  }
+
+  function updatePlayer(dt) {
+    const up = keys["w"] || keys["arrowup"];
+    const down = keys["s"] || keys["arrowdown"];
+    const left = keys["a"] || keys["arrowleft"];
+    const right = keys["d"] || keys["arrowright"];
+
+    if (up) {
+      player.speed += player.accel * dt;
+    } else if (down) {
+      player.speed -= player.accel * dt;
+    } else {
+      if (player.speed > 0) player.speed -= player.friction * dt;
+      if (player.speed < 0) player.speed += player.friction * dt;
+      if (Math.abs(player.speed) < 0.01) player.speed = 0;
+    }
+
+    if (player.speed > player.maxSpeed) player.speed = player.maxSpeed;
+    if (player.speed < -player.maxSpeed * 0.5) player.speed = -player.maxSpeed * 0.5;
+
+    if (left) player.angle -= player.turnSpeed * dt * (player.speed !== 0 ? 1 : 0);
+    if (right) player.angle += player.turnSpeed * dt * (player.speed !== 0 ? 1 : 0);
+
+    player.x += Math.sin(player.angle) * player.speed * dt;
+    player.y -= Math.cos(player.angle) * player.speed * dt;
+
+    if (player.x < ROAD_X + player.width / 2) player.x = ROAD_X + player.width / 2;
+    if (player.x > ROAD_X + ROAD_WIDTH - player.width / 2) player.x = ROAD_X + ROAD_WIDTH - player.width / 2;
+    if (player.y < 80) player.y = 80;
+    if (player.y > canvas.height - 80) player.y = canvas.height - 80;
+  }
+
+  function updateTraffic(dt) {
+    world.trafficSpawnTimer -= dt;
+    if (world.trafficSpawnTimer <= 0) {
+      spawnTraffic();
+      world.trafficSpawnTimer = 800 + Math.random() * 800;
+    }
+
+    for (let i = traffic.length - 1; i >= 0; i--) {
+      const car = traffic[i];
+      car.y += car.speed * dt * 0.6;
+      if (car.y > canvas.height + 100) {
+        traffic.splice(i, 1);
+      }
+    }
+  }
+
+  function updateCops(dt) {
+    world.copSpawnTimer -= dt;
+    if (world.copSpawnTimer <= 0 && cops.length < 4) {
+      spawnCop();
+      world.copSpawnTimer = 3000 + Math.random() * 2000;
+    }
+
+    for (let i = cops.length - 1; i >= 0; i--) {
+      const cop = cops[i];
+      const dx = player.x - cop.x;
+      const dy = player.y - cop.y;
+      const targetAngle = Math.atan2(dx, -dy);
+      let diff = targetAngle - cop.angle;
+      while (diff > Math.PI) diff -= 2 * Math.PI;
+      while (diff < -Math.PI) diff += 2 * Math.PI;
+      cop.angle += diff * 0.03 * dt;
+
+      cop.x += Math.sin(cop.angle) * cop.speed * dt;
+      cop.y -= Math.cos(cop.angle) * cop.speed * dt;
+
+      if (cop.y < -150 || cop.y > canvas.height + 200) {
+        cops.splice(i, 1);
+      }
+    }
+  }
+
+  function rectsOverlap(a, b) {
+    return !(
+      a.x + a.width / 2 < b.x - b.width / 2 ||
+      a.x - a.width / 2 > b.x + b.width / 2 ||
+      a.y + a.height / 2 < b.y - b.height / 2 ||
+      a.y - a.height / 2 > b.y + b.height / 2
+    );
+  }
+
+  function checkCollisions() {
+    const playerBox = {
+      x: player.x,
+      y: player.y,
+      width: player.width,
+      height: player.height
+    };
+
+    for (const car of traffic) {
+      const box = { x: car.x, y: car.y, width: car.width, height: car.height };
+      if (rectsOverlap(playerBox, box)) {
+        endGame("You crashed into traffic!");
+        return;
+      }
+    }
+
+    for (const cop of cops) {
+      const box = { x: cop.x, y: cop.y, width: cop.width, height: cop.height };
+      if (rectsOverlap(playerBox, box)) {
+        endGame("Busted by the cops!");
+        return;
+      }
+    }
+  }
+
+  function endGame(reason) {
+    gameOver = true;
+    statusLabel.textContent = `${reason} Final Score: ${Math.floor(score)}`;
+    restartBtn.style.display = "inline-block";
+  }
+
+  function drawRoad() {
+    ctx.fillStyle = "#1f1f1f";
+    ctx.fillRect(ROAD_X, 0, ROAD_WIDTH, canvas.height);
+
+    ctx.strokeStyle = "#555";
+    ctx.lineWidth = 4;
+    ctx.strokeRect(ROAD_X, 0, ROAD_WIDTH, canvas.height);
+
+    ctx.strokeStyle = "#bbb";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([20, 20]);
+    ctx.beginPath();
+    ctx.moveTo(canvas.width / 2, 0);
+    ctx.lineTo(canvas.width / 2, canvas.height);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  function drawCar(x, y, w, h, angle, colorBody, colorRoof) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle);
+
+    ctx.fillStyle = colorBody;
+    ctx.fillRect(-w / 2, -h / 2, w, h);
+
+    ctx.fillStyle = "#000";
+    const wheelW = w * 0.2;
+    const wheelH = h * 0.2;
+    ctx.fillRect(-w / 2 - wheelW / 2, -h / 2 + 4, wheelW, wheelH);
+    ctx.fillRect(-w / 2 - wheelW / 2, h / 2 - wheelH - 4, wheelW, wheelH);
+    ctx.fillRect(w / 2 - wheelW / 2, -h / 2 + 4, wheelW, wheelH);
+    ctx.fillRect(w / 2 - wheelW / 2, h / 2 - wheelH - 4, wheelW, wheelH);
+
+    ctx.fillStyle = colorRoof;
+    ctx.fillRect(-w * 0.3, -h * 0.15, w * 0.6, h * 0.3);
+
+    ctx.restore();
+  }
+
+  function drawTraffic() {
+    for (const car of traffic) {
+      drawCar(car.x, car.y, car.width, car.height, 0, "#4444aa", "#8888ff");
+    }
+  }
+
+  function drawCops() {
+    for (const cop of cops) {
+      drawCar(cop.x, cop.y, cop.width, cop.height, cop.angle, "#2222ff", "#ffffff");
+      ctx.save();
+      ctx.translate(cop.x, cop.y - cop.height / 2 + 6);
+      ctx.fillStyle = "#ff0000";
+      ctx.fillRect(-10, -4, 8, 8);
+      ctx.fillStyle = "#00ffff";
+      ctx.fillRect(2, -4, 8, 8);
+      ctx.restore();
+    }
+  }
+
+  function drawPlayer() {
+    drawCar(player.x, player.y, player.width, player.height, player.angle, "#ffcc00", "#ffee66");
+  }
+
+  function updateScore(dt) {
+    if (!gameOver) {
+      score += dt * 0.01;
+      scoreLabel.textContent = "Score: " + Math.floor(score);
+    }
+  }
+
+  function loop(timestamp) {
+    const dt = lastTime ? (timestamp - lastTime) : 16;
+    lastTime = timestamp;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    drawRoad();
+
+    if (!gameOver) {
+      updatePlayer(dt);
+      updateTraffic(dt);
+      updateCops(dt);
+      checkCollisions();
+      updateScore(dt);
+    }
+
+    drawTraffic();
+    drawCops();
+    drawPlayer();
+
+    if (!gameOver) {
+      requestAnimationFrame(loop);
+    }
+  }
+
+  restartBtn.addEventListener("click", () => {
+    resetGame();
+    lastTime = 0;
+    requestAnimationFrame(loop);
+  });
+
+  resetGame();
+  requestAnimationFrame(loop);
+</script>
 </body>
 </html>
