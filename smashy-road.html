@@ -118,6 +118,7 @@ let gameOver = false;
 let lastTime = 0;
 let timeAlive = 0;
 
+let worldScroll = 0;
 // Spawn timers
 let trafficTimer = 0;
 let copTimer = 0;
@@ -265,25 +266,30 @@ function updatePlayer(dt) {
   if (right) player.angle += player.turnSpeed * dt * (player.speed !== 0 ? 1 : 0);
 
   player.x += Math.sin(player.angle) * player.speed * dt;
-  player.y -= Math.cos(player.angle) * player.speed * dt;
-
+  
   if (player.x < ROAD_X + player.w/2) player.x = ROAD_X + player.w/2;
   if (player.x > ROAD_X + ROAD_WIDTH - player.w/2) player.x = ROAD_X + ROAD_WIDTH - player.w/2;
 }
 
 function updateTraffic(dt) {
   trafficTimer -= dt;
-  const baseTrafficRate = 900;
-  const difficultyFactor = Math.max(0.35, 1.0 - timeAlive * 0.00018);
   if (trafficTimer <= 0) {
     spawnTraffic();
-    trafficTimer = baseTrafficRate * difficultyFactor;
+    trafficTimer = 900;
   }
 
   for (let i = traffic.length - 1; i >= 0; i--) {
     const car = traffic[i];
+
+    // car's own movement
     car.y += car.speed * dt * 0.6;
-    if (car.y > canvas.height + 160) traffic.splice(i, 1);
+
+    // world scrolling movement
+    car.y += worldScroll * 0.02;
+
+    if (car.y > canvas.height + 200) {
+      traffic.splice(i, 1);
+    }
   }
 }
 
@@ -307,8 +313,13 @@ function updateCops(dt) {
     while (diff < -Math.PI) diff += 2*Math.PI;
 
     cop.angle += diff * 0.0028 * dt;
+
+    // cop's own movement
     cop.x += Math.sin(cop.angle) * cop.speed * dt;
     cop.y -= Math.cos(cop.angle) * cop.speed * dt;
+
+    // world scrolling movement (ADD THIS)
+    cop.y += worldScroll * 0.02;
 
     cop.flashTimer += dt;
 
@@ -317,30 +328,30 @@ function updateCops(dt) {
 }
 
 function updateCoins(dt) {
-  coinTimer -= dt;
-  if (coinTimer <= 0) {
-    spawnCoin();
-    coinTimer = randRange(1200, 2200);
-  }
-
   for (let i = coins.length - 1; i >= 0; i--) {
     const c = coins[i];
-    c.y += 0.25 * dt;
-    if (c.y > canvas.height + 40) coins.splice(i, 1);
+
+    // world scrolling movement
+    c.y += worldScroll * 0.02;
+
+    // remove coins that scroll off-screen
+    if (c.y > canvas.height + 200) {
+      coins.splice(i, 1);
+    }
   }
 }
 
 function updateScenery(dt) {
-  sceneryTimer -= dt;
-  if (sceneryTimer <= 0) {
-    spawnScenery();
-    sceneryTimer = randRange(400, 900);
-  }
-
   for (let i = scenery.length - 1; i >= 0; i--) {
     const s = scenery[i];
-    s.y += 0.25 * dt;
-    if (s.y > canvas.height + 150) scenery.splice(i, 1);
+
+    // world scrolling movement
+    s.y += worldScroll * 0.02;
+
+    // remove scenery that scrolls off-screen
+    if (s.y > canvas.height + 200) {
+      scenery.splice(i, 1);
+    }
   }
 }
 
@@ -425,25 +436,28 @@ function endGame(reason) {
 // --- Drawing ---
 function drawBiomeBackground() {
   const biome = BIOMES[currentBiomeIndex];
-  let img;
-  if (biome === "grass") img = sprites.biome_grass;
-  if (biome === "desert") img = sprites.biome_desert;
-  if (biome === "water") img = sprites.biome_water;
+  const img = sprites["biome_" + biome];
 
   if (spriteReady(img)) {
-    const pattern = ctx.createPattern(img, "repeat");
-    ctx.fillStyle = pattern;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const tileH = img.naturalHeight;
+    const offset = worldScroll % tileH;
+
+    // draw two tiles so the scroll loops seamlessly
+    ctx.drawImage(img, 0, -tileH + offset, canvas.width, tileH);
+    ctx.drawImage(img, 0, offset, canvas.width, tileH);
   } else {
-    if (biome === "grass") ctx.fillStyle = "#3b5b2b";
-    if (biome === "desert") ctx.fillStyle = "#c2a35b";
-    if (biome === "water") ctx.fillStyle = "#2b4b7b";
+    ctx.fillStyle =
+      biome === "grass" ? "#3b5b2b" :
+      biome === "desert" ? "#c2a35b" :
+      "#2b4b7b";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   }
 
+  // road
   ctx.fillStyle = "#3a3a3a";
   ctx.fillRect(ROAD_X, 0, ROAD_WIDTH, canvas.height);
 
+  // lane lines
   ctx.strokeStyle = "#ffffff88";
   ctx.lineWidth = 3;
   ctx.setLineDash([25, 25]);
@@ -581,6 +595,7 @@ function loop(timestamp) {
     timeAlive += dt;
     updateBiome(dt);
     updatePlayer(dt);
+    updateScroll(dt);
     updateTraffic(dt);
     updateCops(dt);
     updateCoins(dt);
