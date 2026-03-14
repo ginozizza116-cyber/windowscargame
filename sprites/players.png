@@ -1,13 +1,12 @@
-sprites/player.png
-sprites/cop.png
-sprites/traffic1.png
-sprites/traffic2.png
-sprites/suv.png
-sprites/truck.png
-sprites/explosion.png
-sprites/tree.png
-sprites/building.png
-sprites/rock.png
-sprites/biome_grass.png
-sprites/biome_desert.png
-sprites/biome_water.png
+loadSprite("biome_grass", "https://i.imgur.com/8w7iKzP.png");
+loadSprite("biome_desert", "https://i.imgur.com/3u8ZQyV.png");
+loadSprite("biome_water", "https://i.imgur.com/4QFQw2n.png");
+
+loadSprite("player", "https://i.imgur.com/1XKx7YB.png");
+loadSprite("car1", "https://i.imgur.com/1XKx7YB.png");
+loadSprite("car2", "https://i.imgur.com/1XKx7YB.png");
+loadSprite("cop", "https://i.imgur.com/1XKx7YB.png");
+loadSprite("tree", "https://i.imgur.com/1XKx7YB.png");
+loadSprite("building", "https://i.imgur.com/1XKx7YB.png");
+loadSprite("rock", "https://i.imgur.com/1XKx7YB.png");
+loadSprite("explosion", "https://i.imgur.com/1XKx7YB.png");
